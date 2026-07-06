@@ -1,0 +1,166 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Rol {
+  SUPERADMIN
+  ADMIN_LOCAL
+  COCINA
+}
+
+enum EstadoComanda {
+  LISTA
+  RETIRADA
+}
+
+enum EstadoSuscripcion {
+  ACTIVA
+  VENCIDA
+  SUSPENDIDA
+  CANCELADA
+}
+
+// ── Tenant principal ──────────────────────────────────────────────────────────
+model Empresa {
+  id          String   @id @default(cuid())
+  nombre      String
+  ruc         String?
+  contacto    String?
+  email       String?
+  telefono    String?
+  activo      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  locales     Local[]
+  usuarios    Usuario[]
+  suscripcion Suscripcion?
+
+  @@index([nombre])
+  @@index([activo])
+  @@map("empresas")
+}
+
+// ── Sucursal / local ──────────────────────────────────────────────────────────
+model Local {
+  id                    String   @id @default(cuid())
+  empresaId             String?  @map("empresa_id")
+  empresa               Empresa? @relation(fields: [empresaId], references: [id])
+  nombre                String
+  slug                  String   @unique
+  descripcion           String?
+  activo                Boolean  @default(true)
+  displayToken          String   @unique @default(cuid())
+  umbralAmarilloMin     Int      @default(3)
+  umbralRojoMin         Int      @default(7)
+  tiempoDesaparicionMin Int      @default(0)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  usuarios  Usuario[]
+  comandas  Comanda[]
+
+  @@index([empresaId])
+  @@map("locales")
+}
+
+// ── Usuarios del sistema ──────────────────────────────────────────────────────
+model Usuario {
+  id        String   @id @default(cuid())
+  nombre    String
+  email     String   @unique
+  password  String
+  rol       Rol
+  empresaId String?  @map("empresa_id")
+  empresa   Empresa? @relation(fields: [empresaId], references: [id])
+  localId   String?  @map("local_id")
+  local     Local?   @relation(fields: [localId], references: [id])
+  activo    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  comandas  Comanda[]
+  loginLogs LoginLog[]
+
+  @@index([empresaId])
+  @@index([localId])
+  @@map("usuarios")
+}
+
+// ── Comandas ──────────────────────────────────────────────────────────────────
+model Comanda {
+  id         String        @id @default(cuid())
+  numero     String
+  estado     EstadoComanda @default(LISTA)
+  localId    String        @map("local_id")
+  local      Local         @relation(fields: [localId], references: [id])
+  usuarioId  String        @map("usuario_id")
+  usuario    Usuario       @relation(fields: [usuarioId], references: [id])
+  listaAt    DateTime      @default(now()) @map("lista_at")
+  retiradaAt DateTime?     @map("retirada_at")
+
+  @@index([localId, listaAt])
+  @@index([localId, estado])
+  @@index([listaAt])
+  @@index([usuarioId])
+  @@map("comandas")
+}
+
+// ── Suscripciones (una por empresa) ──────────────────────────────────────────
+model Suscripcion {
+  id               String            @id @default(cuid())
+  empresaId        String            @unique @map("empresa_id")
+  empresa          Empresa           @relation(fields: [empresaId], references: [id])
+  estado           EstadoSuscripcion @default(ACTIVA)
+  montoMensual     Float             @map("monto_mensual")
+  fechaInicio      DateTime          @map("fecha_inicio")
+  fechaVencimiento DateTime          @map("fecha_vencimiento")
+  notas            String?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  pagos Pago[]
+
+  @@index([estado])
+  @@index([fechaVencimiento])
+  @@map("suscripciones")
+}
+
+// ── Pagos de suscripción ──────────────────────────────────────────────────────
+model Pago {
+  id            String      @id @default(cuid())
+  suscripcionId String      @map("suscripcion_id")
+  suscripcion   Suscripcion @relation(fields: [suscripcionId], references: [id])
+  monto         Float
+  fecha         DateTime    @default(now())
+  referencia    String?
+  notas         String?
+  createdAt     DateTime    @default(now())
+
+  @@index([suscripcionId])
+  @@index([fecha])
+  @@map("pagos")
+}
+
+// ── Registro de accesos (login logs) ─────────────────────────────────────────
+model LoginLog {
+  id        String   @id @default(cuid())
+  usuarioId String?  @map("usuario_id")
+  usuario   Usuario? @relation(fields: [usuarioId], references: [id])
+  email     String
+  ip        String
+  exitoso   Boolean
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([usuarioId])
+  @@index([ip])
+  @@index([exitoso])
+  @@index([email])
+  @@map("login_logs")
+}
